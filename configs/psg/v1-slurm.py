@@ -7,24 +7,40 @@ find_unused_parameters=True
 model = dict(
     type='MaskRCNN',
     pretrained=None,
+    # backbone=dict(
+    #     type='CBSwinTransformer',
+    #     embed_dim=96,
+    #     depths=[2, 2, 6, 2],
+    #     num_heads=[3, 6, 12, 24],
+    #     window_size=7,
+    #     mlp_ratio=4.0,
+    #     qkv_bias=True,
+    #     qk_scale=None,
+    #     drop_rate=0.0,
+    #     attn_drop_rate=0.0,
+    #     drop_path_rate=0.2,
+    #     ape=False,
+    #     patch_norm=True,
+    #     out_indices=(0, 1, 2, 3),
+    #     use_checkpoint=False),
+    # neck=dict(
+    #     type='CBFPN',
+    #     in_channels=[96, 192, 384, 768],
+    #     out_channels=256,
+    #     num_outs=5,
+    #     upsample_cfg=dict(mode='bilinear'),
+    # ),
     backbone=dict(
-        type='CBSwinTransformer',
-        embed_dim=96,
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=7,
-        mlp_ratio=4.0,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.2,
-        ape=False,
-        patch_norm=True,
-        out_indices=(0, 1, 2, 3),
-        use_checkpoint=False),
+        type='ConvNeXt',
+        in_chans=3,
+        depths=[3, 3, 9, 3], 
+        dims=[96, 192, 384, 768], 
+        drop_path_rate=0.4,
+        layer_scale_init_value=1.0,
+        out_indices=[0, 1, 2, 3],
+    ),
     neck=dict(
-        type='CBFPN',
+        type='FPN',
         in_channels=[96, 192, 384, 768],
         out_channels=256,
         num_outs=5,
@@ -103,7 +119,6 @@ model = dict(
                     type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
                 loss_bbox=dict(type='GIoULoss', loss_weight=10.0)),
         ],
-        
         mask_roi_extractor=dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=14, sampling_ratio=0),
@@ -139,18 +154,21 @@ model = dict(
             # type='FakeTestHead',
             num_in_channels=256,
             num_classes=num_classes,
-            pretrain='/share/wangqixun/workspace/github_project/U-2-Net/saved_models/u2net/u2net.pth',
-            ignore_index=255
+            pretrain='/mnt/mmtech01/usr/guiwan/workspace/model_dl/u2net.pth',
+            ignore_index=255,
+            net='U2TinyNET',
         ),
         relationship_head=dict(
             type='BertTransformer',
-            pretrained_transformers='/share/wangqixun/workspace/bs/tx_mm/code/model_dl/hfl/chinese-roberta-wwm-ext', 
-            cache_dir='/share/wangqixun/workspace/bs/psg/psg/tmp',
+            pretrained_transformers='/mnt/mmtech01/usr/guiwan/workspace/model_dl/hfl/chinese-roberta-wwm-ext', 
+            cache_dir='/mnt/mmtech01/usr/guiwan/workspace/psg_output/tmp',
             input_feature_size=256,
             layers_transformers=6,
             feature_size=768,
             num_cls=num_relation,
             cls_qk_size=128,
+            loss_weight=5,
+            num_entity_max=30,
         ),
         glbctx_head=None,
         # glbctx_head=dict(
@@ -213,9 +231,9 @@ model = dict(
                     ignore_iof_thr=-1),
                 sampler=dict(
                     type='OHEMSampler',
-                    num=384,
+                    num=256,
                     pos_fraction=0.25,
-                    neg_pos_ub=-1,
+                    neg_pos_ub=3,
                     add_gt_as_proposals=True),
                 mask_size=28,
                 pos_weight=-1,
@@ -231,9 +249,9 @@ model = dict(
                     ignore_iof_thr=-1),
                 sampler=dict(
                     type='OHEMSampler',
-                    num=384,
+                    num=256,
                     pos_fraction=0.25,
-                    neg_pos_ub=-1,
+                    neg_pos_ub=3,
                     add_gt_as_proposals=True),
                 mask_size=28,
                 pos_weight=-1,
@@ -249,9 +267,9 @@ model = dict(
                     ignore_iof_thr=-1),
                 sampler=dict(
                     type='OHEMSampler',
-                    num=384,
+                    num=256,
                     pos_fraction=0.25,
-                    neg_pos_ub=-1,
+                    neg_pos_ub=3,
                     add_gt_as_proposals=True),
                 mask_size=28,
                 pos_weight=-1,
@@ -267,9 +285,9 @@ model = dict(
             nms=dict(type='nms', iou_threshold=0.7),
             min_bbox_size=0),
         rcnn=dict(
-            score_thr=0.1,
+            score_thr=0.05,
             nms=dict(type='nms', iou_threshold=0.5),
-            max_per_img=20,
+            max_per_img=200,
             # mask_thr_binary=-1,
             mask_thr_binary=0.5,
         )
@@ -371,37 +389,29 @@ test_pipeline = [
 
 train_data = dict(
     type=dataset_type,
-    # ann_file='/share/data/psg/dataset/for_participants/psg_train_val.json',
-    # img_prefix='/share/data/psg/dataset/train2017/',
-    # seg_prefix='/share/data/psg/dataset/panoptic_train2017/',
-    ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_tra.json',
-    img_prefix='/share/data/psg/dataset/train2017/',
-    seg_prefix='/share/data/psg/dataset/panoptic_train2017/',
-    ins_ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_tra.json',
+    ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_tra.json',
+    img_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    seg_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_tra.json',
     pipeline=train_pipeline,
 )
 test_data = dict(
     type=dataset_type,
-    # classes=classes,
-    # ann_file='/share/data/psg/dataset/for_participants/psg_train_val.json',
-    # img_prefix='/share/data/psg/dataset/train2017/',
-    # seg_prefix='/share/data/psg/dataset/panoptic_train2017/',
-    ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_val.json',
-    img_prefix='/share/data/psg/dataset/train2017/',
-    seg_prefix='/share/data/psg/dataset/panoptic_train2017/',
-    ins_ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_val.json',
+    ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_val.json',
+    img_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    seg_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_val.json',
     pipeline=test_pipeline
 )
 data = dict(
-    samples_per_gpu=1,
-    workers_per_gpu=2,
+    samples_per_gpu=3,
+    workers_per_gpu=6,
     train=train_data,
     val=test_data,
     test=test_data,
 )
 
 evaluation = dict(metric=['bbox', 'segm', 'pq'], classwise=True)
-# evaluation = dict(metric=['pq'], classwise=True)
 optimizer = dict(
     type='AdamW',
     lr=0.0001,
@@ -412,16 +422,16 @@ optimizer = dict(
             absolute_pos_embed=dict(decay_mult=0.0),
             relative_position_bias_table=dict(decay_mult=0.0),
             norm=dict(decay_mult=0.0))))
-fp16 = None
-optimizer_config = dict(
-    grad_clip=None,
-    type='DistOptimizerHook',
-    update_interval=1,
-    coalesce=True,
-    bucket_size_mb=-1,
-    use_fp16=False)
-# fp16 = dict(loss_scale=64.)
-# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# fp16 = None
+# optimizer_config = dict(
+#     grad_clip=None,
+#     type='DistOptimizerHook',
+#     update_interval=1,
+#     coalesce=True,
+#     bucket_size_mb=-1,
+#     use_fp16=True)
+fp16 = dict(loss_scale=64.)
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 
 lr_config = dict(
     policy='step',
@@ -439,8 +449,8 @@ workflow = [('train', 1)]
 
 
 
-
-load_from = '/share/wangqixun/workspace/github_project/CBNetV2_train/wqx/refine_mask_rcnn_cbv2_swin_tiny_coco80_caslm/latest.pth'
-# resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_30.pth'
+load_from = '/mnt/mmtech01/usr/guiwan/workspace/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
+# load_from = '/share/wangqixun/workspace/github_project/CBNetV2_train/wqx/refine_mask_rcnn_cbv2_swin_tiny_coco80_caslm/latest.pth'
+# resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_4.pth'
 resume_from = None
-work_dir = '/share/wangqixun/workspace/bs/psg/psg/output/v1'
+work_dir = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v1'
