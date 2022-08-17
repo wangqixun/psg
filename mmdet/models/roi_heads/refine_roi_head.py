@@ -144,7 +144,7 @@ class RefineRoIHead(StandardRoIHead):
             if not self.share_roi_extractor:
                 self.mask_roi_extractor.init_weights()
 
-    def forward_train(self, x, img_metas, proposal_list, gt_bboxes, gt_labels, gt_bboxes_ignore=None, gt_masks=None):
+    def forward_train(self, x, img_metas, proposal_list, gt_bboxes, gt_labels, gt_bboxes_ignore=None, gt_masks=None, gt_semantic_seg=None):
         # assign gts and sample proposals
         num_imgs = len(img_metas)
         if gt_bboxes_ignore is None:

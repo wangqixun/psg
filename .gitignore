@@ -125,3 +125,7 @@ wqx/*.pth
 wqx/*.jpg
 data/*.jpg
 data/*.png
+
+output/
+submit/
+wqx/data/

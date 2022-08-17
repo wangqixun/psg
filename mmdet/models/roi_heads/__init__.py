@@ -24,6 +24,8 @@ from .trident_roi_head import TridentRoIHead
 from .u2net_roi_head import U2netRoIHead
 from .refine_roi_head import RefineRoIHead
 from .cascade_roi_head import CascadeLastMaskRefineRoIHead
+from .semantic_head import SemanticU2Head
+from .relation_transformer import BertTransformer
 
 __all__ = [
     'BaseRoIHead', 'CascadeRoIHead', 'DoubleHeadRoIHead', 'MaskScoringRoIHead',
@@ -37,5 +39,6 @@ __all__ = [
     'SCNetRoIHead', 'SCNetMaskHead', 'SCNetSemanticHead', 'SCNetBBoxHead',
     'FeatureRelayHead', 'GlobalContextHead',
     'U2netRoIHead', 'RefineRoIHead',
-    'CascadeLastMaskRefineRoIHead'
+    'CascadeLastMaskRefineRoIHead',
+    'BertTransformer',
 ]

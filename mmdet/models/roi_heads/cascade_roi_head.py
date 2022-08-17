@@ -12,6 +12,9 @@ from .test_mixins import BBoxTestMixin, MaskTestMixin
 
 import torch.nn.functional as F
 from .refine_roi_head import generate_non_boundary_mask, RefineRoIHead
+import cv2
+from IPython import embed
+from mmdet.core.evaluation.panoptic_utils import INSTANCE_OFFSET
 
 @HEADS.register_module()
 class CascadeRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
@@ -527,6 +530,8 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                  test_cfg=None,
                  pretrained=None,
                  init_cfg=None,
+                 semantic_head=None,
+                 relationship_head=None,
                  glbctx_head=None,
                  ):
         assert bbox_roi_extractor is not None
@@ -549,11 +554,26 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
 
         if glbctx_head is not None:
             self.glbctx_head = build_head(glbctx_head)
+        if semantic_head is not None:
+            self.semantic_head = build_head(semantic_head)
+        if relationship_head is not None:
+            self.relationship_head = build_head(relationship_head)
+
 
     @property
     def with_glbctx(self):
         """bool: whether the head has global context head"""
         return hasattr(self, 'glbctx_head') and self.glbctx_head is not None
+
+    @property
+    def with_semantic(self):
+        """bool: whether the head has semantic head"""
+        return hasattr(self, 'semantic_head') and self.semantic_head is not None
+
+    @property
+    def with_relationship(self):
+        """bool: whether the head has relationship head"""
+        return hasattr(self, 'relationship_head') and self.relationship_head is not None
 
     def _fuse_glbctx(self, roi_feats, glbctx_feat, rois):
         """Fuse global context feats with roi feats."""
@@ -691,6 +711,9 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         mask_results.update(loss_mask=loss_mask, loss_semantic=loss_semantic)
         return mask_results
 
+    def _relationship_forward_train(self, ):
+        pass
+
     def forward_train(self,
                       x,
                       img_metas,
@@ -698,7 +721,10 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                       gt_bboxes,
                       gt_labels,
                       gt_bboxes_ignore=None,
-                      gt_masks=None):
+                      gt_masks=None,
+                      gt_semantic_seg=None,
+                    #   gt_relationship=None,
+                      ):
         """
         Args:
             x (list[Tensor]): list of multi-level img features.
@@ -721,6 +747,13 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
         """
         losses = dict()
 
+        # print(gt_semantic_seg.shape, x[0].shape)
+        # gt_semantic_seg[gt_semantic_seg==255] = 0
+        # print(gt_semantic_seg.max(), gt_semantic_seg.min())
+
+        device = x[0].device
+        dtype = x[0].dtype
+        
         # global context branch
         if self.with_glbctx:
             mc_pred, glbctx_feat = self.glbctx_head(x)
@@ -794,6 +827,108 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                     proposal_list = self.bbox_head[i].refine_bboxes(
                         bbox_results['rois'], roi_labels,
                         bbox_results['bbox_pred'], pos_is_gts, img_metas)
+
+
+        # relationship
+        if self.with_relationship:
+            relationship_input_embedding = []
+            relationship_target = []
+
+            use_fpn_feature_idx = 0
+            num_imgs = len(img_metas)
+            for idx in range(num_imgs):
+                meta_info = img_metas[idx]
+
+                # feature
+                feature = x[use_fpn_feature_idx][idx]
+
+                # thing mask
+                gt_mask = gt_masks[idx].to_ndarray()
+                gt_mask = torch.from_numpy(gt_mask).to(device).to(dtype)
+                if gt_mask.shape[0] != 0:
+                    h_img, w_img = meta_info['img_shape'][:2]
+                    gt_mask = F.interpolate(gt_mask[:, None], size=(h_img, w_img))[:, 0]
+                    h_pad, w_pad = meta_info['pad_shape'][:2]
+                    gt_mask = F.pad(gt_mask[:, None], (0, w_pad-w_img, 0, h_pad-h_img))[:, 0]
+                    h_feature, w_feature = x[use_fpn_feature_idx].shape[-2:]
+                    gt_mask = F.interpolate(gt_mask[:, None], size=(h_feature, w_feature))[:, 0]
+
+                    # thing feature
+                    feature_thing = feature[None] * gt_mask[:, None]
+                    embedding_thing = feature_thing.sum(dim=[-2, -1]) / (gt_mask[:, None].sum(dim=[-2, -1]) + 1e-8)
+                else:
+                    embedding_thing = None
+
+
+                # staff mask
+                mask_staff = []
+                gt_semantic_seg_idx = gt_semantic_seg[idx]
+                masks = meta_info['masks']
+                for idx_stuff in range(len(gt_masks[idx]), len(masks), 1):
+                    category_staff = masks[idx_stuff]['category']
+                    mask = gt_semantic_seg_idx == category_staff
+                    mask_staff.append(mask)
+                if len(mask_staff) != 0:
+                    mask_staff = torch.cat(mask_staff, dim=0)
+
+                    # staff feature
+                    feature_staff = feature[None] * mask_staff[:, None]
+                    embedding_staff = feature_staff.sum(dim=[-2, -1]) / (mask_staff[:, None].sum(dim=[-2, -1]) + 1e-8)
+                else:
+                    embedding_staff = None
+
+                # final embedding
+                embedding_list = []
+                if embedding_thing is not None:
+                    embedding_list.append(embedding_thing)
+                if embedding_staff is not None:
+                    embedding_list.append(embedding_staff)
+                if len(embedding_list) != 0:
+                    embedding = torch.cat(embedding_list, dim=0)
+                    embedding = embedding[None]
+                else:
+                    embedding = None
+                
+                if embedding is not None:
+                    relationship_input_embedding.append(embedding)
+                    target_relationship = torch.zeros([1, self.relationship_head.num_cls, embedding.shape[1], embedding.shape[1]]).to(device)
+                    for ii, jj, cls_relationship in img_metas[idx]['gt_relationship'][0]:
+                        target_relationship[0][cls_relationship][ii][jj] = 1
+                    relationship_target.append(target_relationship)
+                else:
+                    continue
+
+            if len(relationship_input_embedding) != 0:
+
+                max_length = max([e.shape[1] for e in relationship_input_embedding])
+                mask_attention = torch.zeros([num_imgs, max_length]).to(device)
+                for idx in range(num_imgs):
+                    mask_attention[idx, :relationship_input_embedding[idx].shape[1]] = 1.
+                relationship_input_embedding = [
+                    F.pad(e, [0, 0, 0, max_length-e.shape[1]])
+                    for e in relationship_input_embedding
+                ]
+                relationship_target = [
+                    F.pad(t, [0, max_length-t.shape[3], 0, max_length-t.shape[2]])
+                    for t in relationship_target
+                ]
+
+                relationship_input_embedding = torch.cat(relationship_input_embedding, dim=0)
+                relationship_target = torch.cat(relationship_target, dim=0)
+
+                relationship_output = self.relationship_head(relationship_input_embedding, mask_attention)
+                loss_relationship = self.relationship_head.loss(relationship_output, relationship_target, mask_attention)
+                losses['loss_relationship'] = loss_relationship
+
+
+        # semantic
+        if self.with_semantic:
+            semantic_pred_all = self.semantic_head(x[0], mode='tra')
+            loss_semantic = self.semantic_head.loss(semantic_pred_all, gt_semantic_seg)
+            losses['loss_semantic'] = loss_semantic
+        else:
+            semantic_pred_all = None
+
 
         return losses
 
@@ -887,12 +1022,20 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
 
 
     def simple_test(self, x, proposal_list, img_metas, rescale=False):
-        """Test without augmentation."""
+        """Test without augmentation.
+            assert len(x) == 1
+        """
+        
         assert self.with_bbox, 'Bbox head must be implemented.'
         num_imgs = len(proposal_list)
         img_shapes = tuple(meta['img_shape'] for meta in img_metas)
         ori_shapes = tuple(meta['ori_shape'] for meta in img_metas)
         scale_factors = tuple(meta['scale_factor'] for meta in img_metas)
+
+        device = x[0].device
+        dtype = x[0].dtype
+
+
 
         # "ms" in variable names means multi-stage
         ms_bbox_result = {}
@@ -965,10 +1108,87 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
 
         if not self.with_mask:
             return bbox_results
+
+        segm_results = self.simple_test_mask(x, img_metas, det_bboxes, det_labels, rescale=rescale)
+
+
+        if self.with_semantic:
+            semantic_pred = self.semantic_head(x[0], mode='val')
+            pan_results = []
+            for idx in range(len(semantic_pred)):
+                idx_semantic_pred = semantic_pred[idx:idx+1]
+                if rescale:
+                    h_feature, w_feature = semantic_pred.shape[-2:]
+                    meta = img_metas[idx]
+                    ori_height, ori_width = meta['ori_shape'][:2]
+                    resize_height, resize_width = meta['img_shape'][:2]
+                    pad_height, pad_width = meta['pad_shape'][:2]
+                    scale_factor = meta['scale_factor']
+                    # h_factor, w_factor = scale_factor[1], scale_factor[0]
+                    idx_semantic_pred = F.interpolate(
+                        idx_semantic_pred,
+                        # size=(int(h_feature/0.25/h_factor), int(w_feature/0.25/w_factor)),
+                        size=(pad_height, pad_width),
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                    idx_semantic_pred = idx_semantic_pred[:, :, :resize_height, :resize_width]
+                    idx_semantic_pred = F.interpolate(
+                        idx_semantic_pred,
+                        size=(ori_height, ori_width),
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                idx_semantic_pred = idx_semantic_pred.permute([0,2,3,1])
+                idx_semantic_pred = idx_semantic_pred[0]
+                idx_semantic_pred = idx_semantic_pred.softmax(dim=-1)
+                idx_semantic_pred = idx_semantic_pred.argmax(dim=-1)
+                idx_semantic_pred = idx_semantic_pred.detach().cpu().numpy().astype(np.int32)
+                # pan_result = idx_semantic_pred
+                # panoptic_seg = torch.full(
+                #     (ori_height, ori_width),
+                #     self.num_classes,
+                #     dtype=torch.int32,
+                #     device=device
+                # )
+                panoptic_seg = np.ones([ori_height, ori_width], dtype=np.int32) * self.semantic_head.num_classes
+                staff_mask = idx_semantic_pred >= 80
+                panoptic_seg[staff_mask] = idx_semantic_pred[staff_mask]
+
+                idx_segm_results = segm_results[idx]
+                idx_bbox_results = bbox_results[idx]
+                id_instance = 1
+                for pred_class in range(len(idx_segm_results)):
+                    pred_scores_bbox_results = idx_bbox_results[pred_class][:, 4]
+                    pred_class_segm_results = idx_segm_results[pred_class]
+                    for idx_sample in range(len(pred_class_segm_results)):
+                        pred_mask = pred_class_segm_results[-idx_sample]
+                        pred_score = pred_scores_bbox_results[-idx_sample]
+                        if pred_score < 0.4:
+                            continue
+                        panoptic_seg[pred_mask] = pred_class + id_instance * INSTANCE_OFFSET
+                        id_instance += 1
+                panoptic_seg = panoptic_seg
+                pan_result = panoptic_seg
+
+                pan_results.append(pan_result)
         else:
-            segm_results = self.simple_test_mask(
-                x, img_metas, det_bboxes, det_labels, rescale=rescale)
-            return list(zip(bbox_results, segm_results))
+            pan_results = None
+
+
+        if pan_results is not None:
+            res = []
+            for idx in range(num_imgs):
+                idx_pan_results = pan_results[idx]
+                idx_ins_results = bbox_results[idx], segm_results[idx]
+                idx_res = dict(
+                    pan_results=idx_pan_results,
+                    ins_results=idx_ins_results,
+                )
+                res.append(idx_res)
+            return res
+        
+        return list(zip(bbox_results, segm_results))
 
 
 
