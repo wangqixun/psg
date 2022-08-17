@@ -496,6 +496,12 @@ class CocoPanopticDataset(CocoDataset):
             mmcv.dump(bbox_json_results, result_files['bbox'])
             mmcv.dump(segm_json_results, result_files['segm'])
 
+        if 'relation_results' in results[0]:
+            relation_results = [result['relation_results'] for result in results]
+            relation_json_results = []
+            result_files['relation'] = f'{outfile_prefix}.relation.json'
+            mmcv.dump(relation_json_results, result_files['relation'])
+
         return result_files
 
     def evaluate_pan_json(self,

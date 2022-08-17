@@ -84,6 +84,7 @@ class SemanticU2Head(BaseModule):
         pretrain=None,
         ignore_index=255,
         net='U2NET',
+        loss_weight=0.5,
     ):
         super(SemanticU2Head,self).__init__()
         if net == 'U2NET':
@@ -101,6 +102,7 @@ class SemanticU2Head(BaseModule):
         if pretrain is not None:
             load_checkpoint(self.u2net, pretrain, map_location='cpu')
         self.ce_loss = nn.CrossEntropyLoss(size_average=True, ignore_index=ignore_index)
+        self.loss_weight = loss_weight
 
     def init_weights(self):
         pass
@@ -125,11 +127,10 @@ class SemanticU2Head(BaseModule):
     def muti_ce_loss_fusion(self, mask_pred_all, labels_v):
         bs, n, h, w = mask_pred_all[0].shape
         labels_v = labels_v.reshape([-1, ]).to(torch.long)
-        labels_v[labels_v==255] = self.num_classes
         loss = 0
         for d in mask_pred_all:
             l = self.ce_loss(d.permute([0,2,3,1]).reshape([-1, n]),labels_v)
             loss += l
         loss = loss / (len(mask_pred_all) + 1e-8)
-        return loss
+        return loss * self.loss_weight
 

@@ -449,6 +449,6 @@ workflow = [('train', 1)]
 
 load_from = '/share/wangqixun/workspace/github_project/mmdetection_checkpoint/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
 # load_from = '/share/wangqixun/workspace/github_project/CBNetV2_train/wqx/refine_mask_rcnn_cbv2_swin_tiny_coco80_caslm/latest.pth'
-# resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/latest.pth'
-resume_from = None
+resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_3.pth'
+# resume_from = None
 work_dir = '/share/wangqixun/workspace/bs/psg/psg/output/v0'
