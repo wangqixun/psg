@@ -154,7 +154,7 @@ model = dict(
             # type='FakeTestHead',
             num_in_channels=256,
             num_classes=num_classes,
-            pretrain='/mnt/mmtech01/usr/guiwan/workspace/model_dl/u2net/u2net.pth',
+            pretrain='/mnt/mmtech01/usr/guiwan/workspace/model_dl/u2net.pth',
             ignore_index=255,
             net='U2TinyNET',
         ),
