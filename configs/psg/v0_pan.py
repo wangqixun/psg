@@ -410,16 +410,16 @@ optimizer = dict(
             absolute_pos_embed=dict(decay_mult=0.0),
             relative_position_bias_table=dict(decay_mult=0.0),
             norm=dict(decay_mult=0.0))))
-fp16 = None
-optimizer_config = dict(
-    grad_clip=None,
-    type='DistOptimizerHook',
-    update_interval=1,
-    coalesce=True,
-    bucket_size_mb=-1,
-    use_fp16=True)
-# fp16 = dict(loss_scale=64.)
-# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# fp16 = None
+# optimizer_config = dict(
+#     grad_clip=None,
+#     type='DistOptimizerHook',
+#     update_interval=1,
+#     coalesce=True,
+#     bucket_size_mb=-1,
+#     use_fp16=True)
+fp16 = dict(loss_scale=64.)
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 
 lr_config = dict(
     policy='step',
