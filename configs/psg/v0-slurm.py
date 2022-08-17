@@ -387,18 +387,18 @@ test_pipeline = [
 
 train_data = dict(
     type=dataset_type,
-    ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_tra.json',
-    img_prefix='/share/data/psg/dataset/',
-    seg_prefix='/share/data/psg/dataset/',
-    ins_ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_tra.json',
+    ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_tra.json',
+    img_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    seg_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_tra.json',
     pipeline=train_pipeline,
 )
 test_data = dict(
     type=dataset_type,
-    ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_val.json',
-    img_prefix='/share/data/psg/dataset/',
-    seg_prefix='/share/data/psg/dataset/',
-    ins_ann_file='/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_val.json',
+    ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_val.json',
+    img_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    seg_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
+    ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_val.json',
     pipeline=test_pipeline
 )
 data = dict(
