@@ -450,5 +450,5 @@ load_from = None
 # load_from = '/share/wangqixun/workspace/github_project/mmdetection_checkpoint/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
 # load_from = '/share/wangqixun/workspace/github_project/CBNetV2_train/wqx/refine_mask_rcnn_cbv2_swin_tiny_coco80_caslm/latest.pth'
 resume_from = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v0/epoch_3.pth'
-resume_from = None
+# resume_from = None
 work_dir = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v0'
