@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from transformers import BertModel, BertTokenizer
 
+from mmdet.models.losses import accuracy
 
 
 from IPython import embed
@@ -26,6 +27,8 @@ class BertTransformer(BaseModule):
         feature_size=768,
         num_cls=56,
         cls_qk_size=512,
+        loss_weight=1.,
+        num_entity_max=30,
     ):
         super().__init__()
         self.num_cls = num_cls
@@ -42,6 +45,10 @@ class BertTransformer(BaseModule):
         self.cls_q = nn.Linear(feature_size, cls_qk_size * num_cls)
         self.cls_k = nn.Linear(feature_size, cls_qk_size * num_cls)
         self.model.encoder.layer = self.model.encoder.layer[:layers_transformers]
+        self.loss_weight = loss_weight
+        self.feature_size = feature_size
+        self.input_feature_size = input_feature_size
+        self.num_entity_max = num_entity_max
 
 
     def forward(self,inputs_embeds, attention_mask=None):
@@ -56,23 +63,64 @@ class BertTransformer(BaseModule):
         cls_pred = q_embedding @ torch.transpose(k_embedding, 2, 3) / self.cls_qk_size ** 0.5
         return cls_pred
 
+    def get_f1_p_r(self, y_pred, y_true, mask_attention, th=0):
+        # y_pred     [bs, 56, N, N]
+        # y_true     [bs, 56, N, N]
+        # mask_attention   [bs, 56, N, N]
+        res = []
+        
+        y_pred[y_pred > th] = 1
+        y_pred[y_pred < th] = 0
+
+        n1 = y_pred * y_true * mask_attention
+        n2 = y_pred * mask_attention
+        n3 = y_true * mask_attention
+
+        p = 100 * n1.sum(dim=[1,2,3]) / (1e-8 + n2.sum(dim=[1,2,3]))
+        r = 100 * n1.sum(dim=[1,2,3]) / (1e-8 + n3.sum(dim=[1,2,3]))
+        f1 = 2 * p * r / (p + r + 1e-8)
+        res.append([f1.mean(), p.mean(), r.mean()])
+
+        mask_mean = y_true.sum(dim=[0, 2, 3]) > 0
+        p = 100 * n1.sum(dim=[0,2,3]) / (1e-8 + n2.sum(dim=[0,2,3]))
+        r = 100 * n1.sum(dim=[0,2,3]) / (1e-8 + n3.sum(dim=[0,2,3]))
+        f1 = 2 * p * r / (p + r + 1e-8)
+        res.append([
+            torch.sum(f1 * mask_mean) / (torch.sum(mask_mean) + 1e-8),
+            torch.sum(p * mask_mean) / (torch.sum(mask_mean) + 1e-8),
+            torch.sum(r * mask_mean) / (torch.sum(mask_mean) + 1e-8),
+        ])
+
+        return res
+
 
     def loss(self, pred, target, mask_attention):
         # pred     [bs, 56, N, N]
         # target   [bs, 56, N, N]
         # mask_attention   [bs, N]
-
+        losses = {}
         bs, nb_cls, N, N = pred.shape
         
         mask = torch.zeros_like(pred).to(pred.device)
         for idx in range(bs):
-            n = torch.sum(mask_attention[idx]).to(torch.int)            
+            n = torch.sum(mask_attention[idx]).to(torch.int)
             mask[idx, :, :n, :n] = 1
         pred = pred * mask - 9999 * (1 - mask)
 
         loss = self.multilabel_categorical_crossentropy(target.reshape([bs*nb_cls, -1]), pred.reshape([bs*nb_cls, -1]))
         loss = loss.mean()
-        return loss
+        losses['loss_relationship'] = loss * self.loss_weight
+
+        # f1, p, r
+        [f1, precise, recall], [f1_mean, precise_mean, recall_mean] = self.get_f1_p_r(pred, target, mask)
+        losses['rela.F1'] = f1
+        losses['rela.precise'] = precise
+        losses['rela.recall'] = recall
+        losses['rela.F1_mean'] = f1_mean
+        losses['rela.precise_mean'] = precise_mean
+        losses['rela.recall_mean'] = recall_mean
+
+        return losses
 
 
     def multilabel_categorical_crossentropy(self, y_true, y_pred):

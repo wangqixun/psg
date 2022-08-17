@@ -558,8 +558,9 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             self.semantic_head = build_head(semantic_head)
         if relationship_head is not None:
             self.relationship_head = build_head(relationship_head)
-
-
+            self.rela_cls_embed = nn.Embedding(self.semantic_head.num_classes, self.relationship_head.input_feature_size)
+            self.num_entity_max = self.relationship_head.num_entity_max
+        
     @property
     def with_glbctx(self):
         """bool: whether the head has global context head"""
@@ -845,6 +846,7 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                 # thing mask
                 gt_mask = gt_masks[idx].to_ndarray()
                 gt_mask = torch.from_numpy(gt_mask).to(device).to(dtype)
+                gt_label = gt_labels[idx]
                 if gt_mask.shape[0] != 0:
                     h_img, w_img = meta_info['img_shape'][:2]
                     gt_mask = F.interpolate(gt_mask[:, None], size=(h_img, w_img))[:, 0]
@@ -855,25 +857,31 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
 
                     # thing feature
                     feature_thing = feature[None] * gt_mask[:, None]
+                    cls_feature_thing = self.rela_cls_embed(gt_label.reshape([-1, ]))
                     embedding_thing = feature_thing.sum(dim=[-2, -1]) / (gt_mask[:, None].sum(dim=[-2, -1]) + 1e-8)
+                    embedding_thing = embedding_thing + cls_feature_thing
                 else:
                     embedding_thing = None
 
 
                 # staff mask
                 mask_staff = []
+                label_staff = []
                 gt_semantic_seg_idx = gt_semantic_seg[idx]
                 masks = meta_info['masks']
                 for idx_stuff in range(len(gt_masks[idx]), len(masks), 1):
                     category_staff = masks[idx_stuff]['category']
                     mask = gt_semantic_seg_idx == category_staff
                     mask_staff.append(mask)
+                    label_staff.append(category_staff)
                 if len(mask_staff) != 0:
                     mask_staff = torch.cat(mask_staff, dim=0)
-
+                    label_staff = torch.tensor(label_staff).to(device).to(torch.long)
                     # staff feature
                     feature_staff = feature[None] * mask_staff[:, None]
+                    cls_feature_staff = self.rela_cls_embed(label_staff.reshape([-1, ]))
                     embedding_staff = feature_staff.sum(dim=[-2, -1]) / (mask_staff[:, None].sum(dim=[-2, -1]) + 1e-8)
+                    embedding_staff = embedding_staff + cls_feature_staff
                 else:
                     embedding_staff = None
 
@@ -916,9 +924,13 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                 relationship_input_embedding = torch.cat(relationship_input_embedding, dim=0)
                 relationship_target = torch.cat(relationship_target, dim=0)
 
+                relationship_input_embedding = relationship_input_embedding[:, :self.num_entity_max, :]
+                relationship_target = relationship_target[:, :, :self.num_entity_max, :self.num_entity_max]
+                mask_attention = mask_attention[:, :self.num_entity_max]
+
                 relationship_output = self.relationship_head(relationship_input_embedding, mask_attention)
                 loss_relationship = self.relationship_head.loss(relationship_output, relationship_target, mask_attention)
-                losses['loss_relationship'] = loss_relationship
+                losses.update(loss_relationship)
 
 
         # semantic

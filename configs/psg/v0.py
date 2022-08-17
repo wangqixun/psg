@@ -167,6 +167,8 @@ model = dict(
             feature_size=768,
             num_cls=num_relation,
             cls_qk_size=128,
+            loss_weight=5,
+            num_entity_max=30,
         ),
         glbctx_head=None,
         # glbctx_head=dict(
@@ -402,8 +404,8 @@ test_data = dict(
     pipeline=test_pipeline
 )
 data = dict(
-    samples_per_gpu=2,
-    workers_per_gpu=4,
+    samples_per_gpu=3,
+    workers_per_gpu=6,
     train=train_data,
     val=test_data,
     test=test_data,
@@ -449,6 +451,6 @@ workflow = [('train', 1)]
 
 load_from = '/share/wangqixun/workspace/github_project/mmdetection_checkpoint/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
 # load_from = '/share/wangqixun/workspace/github_project/CBNetV2_train/wqx/refine_mask_rcnn_cbv2_swin_tiny_coco80_caslm/latest.pth'
-resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_3.pth'
-# resume_from = None
+# resume_from = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_4.pth'
+resume_from = None
 work_dir = '/share/wangqixun/workspace/bs/psg/psg/output/v0'
