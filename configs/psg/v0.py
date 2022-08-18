@@ -404,8 +404,8 @@ test_data = dict(
     pipeline=test_pipeline
 )
 data = dict(
-    samples_per_gpu=3,
-    workers_per_gpu=6,
+    samples_per_gpu=4,
+    workers_per_gpu=8,
     train=train_data,
     val=test_data,
     test=test_data,
