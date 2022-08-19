@@ -5,15 +5,29 @@ import os
 import random
 from panopticapi.utils import rgb2id
 from mmdet.core.evaluation.panoptic_utils import INSTANCE_OFFSET
+import mmcv
 from tqdm import tqdm
 
 from xsma.generel_utils.tool_json import load_json, write_json
 
+from IPython import embed
+import json
 
 
 def get_model():
-    cfg = '/share/wangqixun/workspace/bs/psg/psg/output/v0/v0.py'
-    ckp = '/share/wangqixun/workspace/bs/psg/psg/output/v0/epoch_36.pth'
+    cfg = '/share/wangqixun/workspace/bs/psg/psg/configs/psg/v2-slurm.py'
+    ckp = '/share/wangqixun/workspace/bs/psg/psg/output/v2/epoch_24.pth'
+    cfg = mmcv.Config.fromfile(cfg)
+
+    cfg['model']['roi_head']['type'] = 'CascadeLastMaskRefineRoIHeadForinfer'
+
+    cfg['model']['roi_head']['semantic_head']['pretrain'] = None
+    cfg['model']['roi_head']['relationship_head']['pretrained_transformers'] = '/share/wangqixun/workspace/bs/tx_mm/code/model_dl/hfl/chinese-roberta-wwm-ext'
+    cfg['model']['roi_head']['relationship_head']['cache_dir'] = './'
+
+    cfg['model']['test_cfg']['rcnn']['score_thr'] = 0.3
+    
+
     model = init_detector(cfg, ckp)
     return model
 
@@ -53,8 +67,8 @@ def get_tra_val_test_list():
 
 
 def get_test_p():
-    jpg_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/v0/pansegm'
-    json_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/v0'
+    jpg_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/v0/submission/panseg'
+    json_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/v0/submission'
     os.makedirs(jpg_output_dir, exist_ok=True)
 
 
@@ -66,11 +80,15 @@ def get_test_p():
     img_dir = '/share/data/psg/dataset'
     model = get_model()
 
-    cur_nb = 0
-    nb_vis = 20
+    cur_nb = -1
+    nb_vis = None
 
     all_img_dicts = []
     for d in tqdm(psg_val_data['data']):
+        cur_nb += 1
+        if nb_vis is not None and cur_nb > nb_vis:
+            continue
+
         image_id = d['image_id']
         # if image_id not in test_id_list:
         #     continue
@@ -78,42 +96,22 @@ def get_test_p():
         img_file = os.path.join(img_dir, d['file_name'])
         img = cv2.imread(img_file)
         img_res = inference_detector(model, img)
+
         pan_results = img_res['pan_results']
-        bbox_results, segm_results = img_res['ins_results']
+        ins_results = img_res['ins_results']
+        rela_results = img_res['rela_results']
+        entityid_list = rela_results['entityid_list']
+        realtion = rela_results['realtion']
 
-        # img_output = np.zeros_like(img)
-        # for idx_class in range(len(bbox_results)):
-        #     class_bbox_results = bbox_results[idx_class]
-        #     class_segm_results = segm_results[idx_class]
-        #     for idx_sample in range(len(class_bbox_results)):
-        #         sample_class_bbox_result = class_bbox_results[idx_sample]
-        #         sample_class_segm_result = class_segm_results[idx_sample]
-        #         score = sample_class_bbox_result[4]
-        #         segm = sample_class_segm_result
-        #         if score < 0.4:
-        #             continue
-        #         r, g, b = random.choices(range(0, 255), k=3)
-        #         print(r, g, b)
-        #         coloring_mask = np.concatenate([segm[..., None]*1]*3, axis=-1)
-        #         for j, color in enumerate([b, g, r]):
-        #             coloring_mask[:, :, j] = coloring_mask[:, :, j] * color
-        #         img_output = img_output + coloring_mask
-        #         segment = dict(category_id=int(idx_class), id=rgb2id((r, g, b)))
-        # img_output = img_output.astype(np.uint8)
-        # mask = np.sum(img_output, axis=-1) > 0
-        # img_output_2 = np.copy(img)
-        # img_output_2[mask] = img_output_2[mask] * 0.5 + img_output[mask] * 0.5
-        # img_output = np.concatenate([img_output_2, img_output], axis=1)
-        # cv2,imwrite(f'/share/wangqixun/workspace/bs/psg/psg/wqx/{idx}.jpg', img_output)
-
-        instance_id_all = np.unique(pan_results)
         img_output = np.zeros_like(img)
         segments_info = []
-        for instance_id in instance_id_all:
-            if not (instance_id <= 133 or instance_id >= INSTANCE_OFFSET):
-                continue
+        for instance_id in entityid_list:
+            # instance_id == 255 background
             mask = pan_results == instance_id
-            r, g, b = random.choices(range(0, 255), k=3)
+            if instance_id == 255:
+                r, g, b = 0, 0, 0
+            else:
+                r, g, b = random.choices(range(0, 255), k=3)
             coloring_mask = np.concatenate([mask[..., None]*1]*3, axis=-1)
             for j, color in enumerate([b, g, r]):
                 coloring_mask[:, :, j] = coloring_mask[:, :, j] * color
@@ -123,35 +121,97 @@ def get_test_p():
             segments_info.append(segment)
 
         img_output = img_output.astype(np.uint8)
-        mask = np.sum(img_output, axis=-1) > 0
-        img_output_2 = np.copy(img)
-        img_output_2[mask] = img_output_2[mask] * 0.5 + img_output[mask] * 0.5
-        img_output = np.concatenate([img_output_2, img_output], axis=1)
-        cv2.imwrite(f'{jpg_output_dir}/{cur_nb}.jpg', img_output)
-        cur_nb += 1
+        # mask = np.sum(img_output, axis=-1) > 0
+        # img_output_2 = np.copy(img)
+        # img_output_2[mask] = img_output_2[mask] * 0.5 + img_output[mask] * 0.5
+        # img_output = np.concatenate([img_output_2, img_output], axis=1)
+        cv2.imwrite(f'{jpg_output_dir}/{cur_nb}.png', img_output)
 
         single_result_dict = dict(
-            image_id=image_id,
-            relations='锋哥 YYDS',
+            # image_id=image_id,
+            relations=realtion,
             segments_info=segments_info,
             pan_seg_file_name='%d.png' % cur_nb,
         )
         all_img_dicts.append(single_result_dict)
 
-    write_json(all_img_dicts, f'{json_output_dir}/relation.json')
+    # write_json(all_img_dicts, f'{json_output_dir}/relation.json')
+    with open(f'{json_output_dir}/relation.json', 'w') as outfile:
+        json.dump(all_img_dicts, outfile, default=str)
 
 
-def merge_wqx_gxf():
-    wqx_json_file_path = '/share/wangqixun/workspace/bs/psg/psg/wqx/data/relation.json'
-    gxf_json_file_path = '/share/wangqixun/workspace/bs/psg/psg/wqx/data/relation.json'
 
-    wqx_json = load_json(wqx_json_file_path)
-    gxf_json = load_json(gxf_json_file_path)
+def get_val_p():
+    jpg_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission/panseg'
+    json_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission'
+    os.makedirs(jpg_output_dir, exist_ok=True)
 
-    for idx in range(len(wqx_json)):
-        relation = wqx_json[idx]
-        
 
+
+    tra_id_list, val_id_list, test_id_list = get_tra_val_test_list()
+    psg_val_data_file = '/share/data/psg/dataset/for_participants/psg_val_test.json'
+    psg_val_data = load_json(psg_val_data_file)
+
+    img_dir = '/share/data/psg/dataset'
+    model = get_model()
+
+    cur_nb = -1
+    nb_vis = None
+
+    all_img_dicts = []
+    for d in tqdm(psg_val_data['data']):
+        cur_nb += 1
+        if nb_vis is not None and cur_nb > nb_vis:
+            continue
+
+        image_id = d['image_id']
+        if image_id not in val_id_list:
+            continue
+        # res['image_id'] = image_id
+        img_file = os.path.join(img_dir, d['file_name'])
+        img = cv2.imread(img_file)
+        img_res = inference_detector(model, img)
+
+        pan_results = img_res['pan_results']
+        ins_results = img_res['ins_results']
+        rela_results = img_res['rela_results']
+        entityid_list = rela_results['entityid_list']
+        realtion = rela_results['realtion']
+
+        img_output = np.zeros_like(img)
+        segments_info = []
+        for instance_id in entityid_list:
+            # instance_id == 255 background
+            mask = pan_results == instance_id
+            # if instance_id == 255:
+            #     continue
+            r, g, b = random.choices(range(0, 255), k=3)
+            coloring_mask = np.concatenate([mask[..., None]*1]*3, axis=-1)
+            for j, color in enumerate([b, g, r]):
+                coloring_mask[:, :, j] = coloring_mask[:, :, j] * color
+            img_output = img_output + coloring_mask
+            idx_class = instance_id % INSTANCE_OFFSET + 1
+            segment = dict(category_id=int(idx_class), id=rgb2id((r, g, b)))
+            segments_info.append(segment)
+
+        img_output = img_output.astype(np.uint8)
+        # mask = np.sum(img_output, axis=-1) > 0
+        # img_output_2 = np.copy(img)
+        # img_output_2[mask] = img_output_2[mask] * 0.5 + img_output[mask] * 0.5
+        # img_output = np.concatenate([img_output_2, img_output], axis=1)
+        cv2.imwrite(f'{jpg_output_dir}/{cur_nb}.png', img_output)
+
+        single_result_dict = dict(
+            # image_id=image_id,
+            relations=realtion,
+            segments_info=segments_info,
+            pan_seg_file_name='%d.png' % cur_nb,
+        )
+        all_img_dicts.append(single_result_dict)
+
+    # write_json(all_img_dicts, f'{json_output_dir}/relation.json')
+    with open(f'{json_output_dir}/relation.json', 'w') as outfile:
+        json.dump(all_img_dicts, outfile, default=str)
 
 
 
@@ -159,7 +219,8 @@ def merge_wqx_gxf():
 
 if __name__ == '__main__':
     # get_tra_val_test_list()
-    get_test_p()
+    # get_test_p()
+    get_val_p()
 
 
 

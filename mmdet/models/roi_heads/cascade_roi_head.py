@@ -1299,3 +1299,239 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
             return [(bbox_result, segm_result)]
         else:
             return [bbox_result]
+
+
+@HEADS.register_module()
+class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
+
+    def get_entity_embedding(self, pan_result, feature_map, meta):
+        device = feature_map.device
+        dtype = feature_map.dtype
+
+        ori_height, ori_width = meta['ori_shape'][:2]
+        resize_height, resize_width = meta['img_shape'][:2]
+        pad_height, pad_width = meta['pad_shape'][:2]
+
+        id_list = []
+        mask_list = []
+        class_mask_list = []
+        instance_id_all = torch.unique(pan_result)
+        for instance_id in instance_id_all:
+            if not (instance_id < 133 or instance_id >= INSTANCE_OFFSET):
+                continue
+            mask = pan_result == instance_id
+            class_mask = instance_id % INSTANCE_OFFSET
+            mask_list.append(mask)
+            class_mask_list.append(class_mask)
+            id_list.append(instance_id.item())
+
+        if len(mask_list) == 0:
+            return None
+        
+        class_mask_tensor = torch.tensor(class_mask_list).to(device).to(torch.long)[None]
+        cls_entity_embedding = self.rela_cls_embed(class_mask_tensor)
+
+        # mask_tensor = torch.tensor(mask_list).to(device).to(dtype)[None]
+        mask_tensor = torch.stack(mask_list)[None]
+        mask_tensor = (mask_tensor * 1).to(dtype)
+        h_img, w_img = resize_height, resize_width
+        mask_tensor = F.interpolate(mask_tensor, size=(h_img, w_img))
+        h_pad, w_pad = pad_height, pad_width
+        mask_tensor = F.pad(mask_tensor, (0, w_pad-w_img, 0, h_pad-h_img))
+        h_feature, w_feature = feature_map.shape[-2:]
+        mask_tensor = F.interpolate(mask_tensor, size=(h_feature, w_feature))
+        mask_tensor = mask_tensor[0][:, None]
+
+        entity_embedding = (feature_map * mask_tensor).sum(dim=[2, 3]) / (mask_tensor.sum(dim=[2, 3]) + 1e-8)
+        entity_embedding = entity_embedding[None]
+        entity_embedding = entity_embedding + cls_entity_embedding
+
+        return entity_embedding, id_list
+
+
+    def simple_test(self, x, proposal_list, img_metas, rescale=False):
+        """Test without augmentation.
+            assert len(x) == 1
+        """
+        
+        assert self.with_bbox, 'Bbox head must be implemented.'
+        num_imgs = len(proposal_list)
+        img_shapes = tuple(meta['img_shape'] for meta in img_metas)
+        ori_shapes = tuple(meta['ori_shape'] for meta in img_metas)
+        scale_factors = tuple(meta['scale_factor'] for meta in img_metas)
+
+        device = x[0].device
+        dtype = x[0].dtype
+
+        th = 0.3
+
+        # "ms" in variable names means multi-stage
+        ms_bbox_result = {}
+        ms_segm_result = {}
+        ms_scores = []
+        rcnn_test_cfg = self.test_cfg
+
+        rois = bbox2roi(proposal_list)
+        for i in range(self.num_stages):
+            bbox_results = self._bbox_forward(i, x, rois)
+
+            # split batch bbox prediction back to each image
+            cls_score = bbox_results['cls_score']
+            bbox_pred = bbox_results['bbox_pred']
+            num_proposals_per_img = tuple(
+                len(proposals) for proposals in proposal_list)
+            rois = rois.split(num_proposals_per_img, 0)
+            cls_score = cls_score.split(num_proposals_per_img, 0)
+            if isinstance(bbox_pred, torch.Tensor):
+                bbox_pred = bbox_pred.split(num_proposals_per_img, 0)
+            else:
+                bbox_pred = self.bbox_head[i].bbox_pred_split(
+                    bbox_pred, num_proposals_per_img)
+            ms_scores.append(cls_score)
+
+            if i < self.num_stages - 1:
+                if self.bbox_head[i].custom_activation:
+                    cls_score = [
+                        self.bbox_head[i].loss_cls.get_activation(s)
+                        for s in cls_score
+                    ]
+                bbox_label = [s[:, :-1].argmax(dim=1) for s in cls_score]
+                rois = torch.cat([
+                    self.bbox_head[i].regress_by_class(rois[j], bbox_label[j],
+                                                       bbox_pred[j],
+                                                       img_metas[j])
+                    for j in range(num_imgs)
+                ])
+
+        # average scores of each image by stages
+        cls_score = [
+            sum([score[i] for score in ms_scores]) / float(len(ms_scores))
+            for i in range(num_imgs)
+        ]
+
+        # apply bbox post-processing to each image individually
+        det_bboxes = []
+        det_labels = []
+        for i in range(num_imgs):
+            det_bbox, det_label = self.bbox_head[-1].get_bboxes(
+                rois[i],
+                cls_score[i],
+                bbox_pred[i],
+                img_shapes[i],
+                scale_factors[i],
+                rescale=rescale,
+                cfg=rcnn_test_cfg)
+            det_bboxes.append(det_bbox)
+            det_labels.append(det_label)
+
+        if torch.onnx.is_in_onnx_export():
+            return det_bboxes, det_labels
+        bbox_results = [
+            bbox2result(det_bboxes[i], det_labels[i],
+                        self.bbox_head[-1].num_classes)
+            for i in range(num_imgs)
+        ]
+        ms_bbox_result['ensemble'] = bbox_results
+
+
+        if not self.with_mask:
+            return bbox_results
+
+        segm_results = self.simple_test_mask(x, img_metas, det_bboxes, det_labels, rescale=rescale)
+
+
+        if self.with_semantic:
+            semantic_pred = self.semantic_head(x[0], mode='val')
+            pan_results = []
+            for idx in range(len(semantic_pred)):
+                idx_semantic_pred = semantic_pred[idx:idx+1]
+                if rescale:
+                    h_feature, w_feature = semantic_pred.shape[-2:]
+                    meta = img_metas[idx]
+                    ori_height, ori_width = meta['ori_shape'][:2]
+                    resize_height, resize_width = meta['img_shape'][:2]
+                    pad_height, pad_width = meta['pad_shape'][:2]
+                    # h_factor, w_factor = scale_factor[1], scale_factor[0]
+                    idx_semantic_pred = F.interpolate(
+                        idx_semantic_pred,
+                        # size=(int(h_feature/0.25/h_factor), int(w_feature/0.25/w_factor)),
+                        size=(pad_height, pad_width),
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                    idx_semantic_pred = idx_semantic_pred[:, :, :resize_height, :resize_width]
+                    idx_semantic_pred = F.interpolate(
+                        idx_semantic_pred,
+                        size=(ori_height, ori_width),
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                idx_semantic_pred = idx_semantic_pred.permute([0,2,3,1])
+                idx_semantic_pred = idx_semantic_pred[0]
+                idx_semantic_pred = idx_semantic_pred.softmax(dim=-1)
+                idx_semantic_pred = idx_semantic_pred.argmax(dim=-1)
+                idx_semantic_pred = idx_semantic_pred.detach().to(torch.int)
+                # pan_result = idx_semantic_pred
+                # panoptic_seg = torch.full(
+                #     (ori_height, ori_width),
+                #     self.num_classes,
+                #     dtype=torch.int32,
+                #     device=device
+                # )
+                panoptic_seg = torch.ones([ori_height, ori_width], dtype=torch.int, device=device) * 255
+                staff_mask = idx_semantic_pred >= 80
+                panoptic_seg[staff_mask] = idx_semantic_pred[staff_mask]
+
+                idx_segm_results = segm_results[idx]
+                idx_bbox_results = bbox_results[idx]
+                id_instance = 1
+                for pred_class in range(len(idx_segm_results)):
+                    pred_scores_bbox_results = idx_bbox_results[pred_class][:, 4]
+                    pred_class_segm_results = idx_segm_results[pred_class]
+                    for idx_sample in range(len(pred_class_segm_results)):
+                        pred_mask = pred_class_segm_results[-idx_sample]
+                        pred_score = pred_scores_bbox_results[-idx_sample]
+                        if pred_score < th:
+                            continue
+                        panoptic_seg[pred_mask] = pred_class + id_instance * INSTANCE_OFFSET
+                        id_instance += 1
+                pan_result = panoptic_seg
+
+                pan_results.append(pan_result)
+        else:
+            pan_results = None
+
+        rela_results = None
+        if self.with_relationship is not None:
+            use_fpn_feature_idx = 0
+            entity_res = self.get_entity_embedding(pan_result=pan_results[0], feature_map=x[use_fpn_feature_idx], meta=img_metas[0])
+            if entity_res is not None:
+                realtion_res = []
+                entity_embedding, entityid_list = entity_res
+                relationship_output = self.relationship_head(entity_embedding, attention_mask=None)
+                relationship_output = relationship_output[0]
+                for idx_i in range(relationship_output.shape[1]):
+                    relationship_output[:, idx_i, idx_i] = -9999
+                _, topk_indices = torch.topk(relationship_output.reshape([-1,]), k=20)
+
+                for index in topk_indices:
+                    pred_cls = index // (relationship_output.shape[1] ** 2)
+                    index_subject_object = index % (relationship_output.shape[1] ** 2)
+                    pred_subject = index_subject_object // relationship_output.shape[1]
+                    pred_object = index_subject_object % relationship_output.shape[1]
+                    pred = [pred_subject.item(), pred_object.item(), pred_cls.item()]
+                    realtion_res.append(pred)
+                rela_results = dict(
+                    entityid_list=entityid_list,
+                    realtion=realtion_res,
+                )
+
+        res = dict(
+            pan_results=pan_results[0].cpu().numpy().astype(int),
+            ins_results=(bbox_results[0], segm_results[0]),
+            rela_results=rela_results,
+        )
+        res = [res]
+        return res
+
+
