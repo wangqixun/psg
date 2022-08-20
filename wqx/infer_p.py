@@ -14,9 +14,7 @@ from IPython import embed
 import json
 
 
-def get_model():
-    cfg = '/share/wangqixun/workspace/bs/psg/psg/configs/psg/v2-slurm.py'
-    ckp = '/share/wangqixun/workspace/bs/psg/psg/output/v2/epoch_24.pth'
+def get_model(cfg, ckp):
     cfg = mmcv.Config.fromfile(cfg)
 
     cfg['model']['roi_head']['type'] = 'CascadeLastMaskRefineRoIHeadForinfer'
@@ -49,8 +47,7 @@ def get_tra_val_test_list():
             tra_id_list.append(d['image_id'])
 
     for d in psg_val_data['data']:
-        if d['image_id'] not in val_id_list:
-            test_id_list.append(d['image_id'])
+        test_id_list.append(d['image_id'])
     
     tra_id_list = np.array(tra_id_list)
     val_id_list = np.array(val_id_list)
@@ -141,9 +138,14 @@ def get_test_p():
 
 
 
-def get_val_p():
-    jpg_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission/panseg'
-    json_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission'
+def get_val_p(mode, cfg, ckp):
+    jpg_output_dir = f'/share/wangqixun/workspace/bs/psg/psg/submit/{mode}/submission/panseg'
+    json_output_dir = f'/share/wangqixun/workspace/bs/psg/psg/submit/{mode}/submission'
+
+    if mode=='val':
+        jpg_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission/panseg'
+        json_output_dir = '/share/wangqixun/workspace/bs/psg/psg/submit/val/submission'
+
     os.makedirs(jpg_output_dir, exist_ok=True)
 
 
@@ -153,7 +155,7 @@ def get_val_p():
     psg_val_data = load_json(psg_val_data_file)
 
     img_dir = '/share/data/psg/dataset'
-    model = get_model()
+    model = get_model(cfg, ckp)
 
     cur_nb = -1
     nb_vis = None
@@ -165,9 +167,10 @@ def get_val_p():
             continue
 
         image_id = d['image_id']
-        if image_id not in val_id_list:
+
+        if mode=='val' and image_id not in val_id_list:
             continue
-        # res['image_id'] = image_id
+
         img_file = os.path.join(img_dir, d['file_name'])
         img = cv2.imread(img_file)
         img_res = inference_detector(model, img)
@@ -176,7 +179,7 @@ def get_val_p():
         ins_results = img_res['ins_results']
         rela_results = img_res['rela_results']
         entityid_list = rela_results['entityid_list']
-        realtion = rela_results['realtion']
+        relation = rela_results['relation']
 
         img_output = np.zeros_like(img)
         segments_info = []
@@ -203,7 +206,7 @@ def get_val_p():
 
         single_result_dict = dict(
             # image_id=image_id,
-            relations=realtion,
+            relations=[[s, o, r+1] for s, o, r in relation],
             segments_info=segments_info,
             pan_seg_file_name='%d.png' % cur_nb,
         )
@@ -220,7 +223,11 @@ def get_val_p():
 if __name__ == '__main__':
     # get_tra_val_test_list()
     # get_test_p()
-    get_val_p()
+    get_val_p(
+        mode='v2',
+        cfg='/share/wangqixun/workspace/bs/psg/psg/configs/psg/v2-slurm.py',
+        ckp='/share/wangqixun/workspace/bs/psg/psg/output/v2/epoch_34.pth',
+    )
 
 
 

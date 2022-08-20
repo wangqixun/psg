@@ -141,6 +141,7 @@ model = dict(
             pretrain='/mnt/mmtech01/usr/guiwan/workspace/model_dl/u2net.pth',
             ignore_index=255,
             net='U2TinyNET',
+            loss_weight=5,
         ),
         relationship_head=dict(
             type='BertTransformer',

@@ -1304,7 +1304,7 @@ class CascadeLastMaskRefineRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
 @HEADS.register_module()
 class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
 
-    def get_entity_embedding(self, pan_result, feature_map, meta):
+    def get_entity_embedding(self, pan_result, pan_score, feature_map, meta):
         device = feature_map.device
         dtype = feature_map.dtype
 
@@ -1312,7 +1312,9 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
         resize_height, resize_width = meta['img_shape'][:2]
         pad_height, pad_width = meta['pad_shape'][:2]
 
-        id_list = []
+
+        entity_id_list = []
+        entity_score_list = []
         mask_list = []
         class_mask_list = []
         instance_id_all = torch.unique(pan_result)
@@ -1321,9 +1323,12 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
                 continue
             mask = pan_result == instance_id
             class_mask = instance_id % INSTANCE_OFFSET
+            class_score = (mask * pan_score).sum() / (1e-8 + mask.sum())
             mask_list.append(mask)
             class_mask_list.append(class_mask)
-            id_list.append(instance_id.item())
+            entity_id_list.append(instance_id.item())
+            entity_score_list.append(class_score)
+
 
         if len(mask_list) == 0:
             return None
@@ -1346,7 +1351,7 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
         entity_embedding = entity_embedding[None]
         entity_embedding = entity_embedding + cls_entity_embedding
 
-        return entity_embedding, id_list
+        return entity_embedding, entity_id_list, entity_score_list
 
 
     def simple_test(self, x, proposal_list, img_metas, rescale=False):
@@ -1443,6 +1448,7 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
         if self.with_semantic:
             semantic_pred = self.semantic_head(x[0], mode='val')
             pan_results = []
+            pan_scores = []
             for idx in range(len(semantic_pred)):
                 idx_semantic_pred = semantic_pred[idx:idx+1]
                 if rescale:
@@ -1469,18 +1475,15 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
                 idx_semantic_pred = idx_semantic_pred.permute([0,2,3,1])
                 idx_semantic_pred = idx_semantic_pred[0]
                 idx_semantic_pred = idx_semantic_pred.softmax(dim=-1)
-                idx_semantic_pred = idx_semantic_pred.argmax(dim=-1)
+                idx_semantic_score, idx_semantic_pred = idx_semantic_pred.max(dim=-1)
                 idx_semantic_pred = idx_semantic_pred.detach().to(torch.int)
-                # pan_result = idx_semantic_pred
-                # panoptic_seg = torch.full(
-                #     (ori_height, ori_width),
-                #     self.num_classes,
-                #     dtype=torch.int32,
-                #     device=device
-                # )
+                idx_semantic_score = idx_semantic_score.detach()
+
                 panoptic_seg = torch.ones([ori_height, ori_width], dtype=torch.int, device=device) * 255
+                panoptic_seg_score = torch.zeros([ori_height, ori_width], dtype=dtype, device=device)
                 staff_mask = idx_semantic_pred >= 80
                 panoptic_seg[staff_mask] = idx_semantic_pred[staff_mask]
+                panoptic_seg_score[staff_mask] = idx_semantic_score[staff_mask]
 
                 idx_segm_results = segm_results[idx]
                 idx_bbox_results = bbox_results[idx]
@@ -1494,36 +1497,50 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
                         if pred_score < th:
                             continue
                         panoptic_seg[pred_mask] = pred_class + id_instance * INSTANCE_OFFSET
+                        panoptic_seg_score[pred_mask] =  panoptic_seg_score[pred_mask] * 0 + pred_score
                         id_instance += 1
                 pan_result = panoptic_seg
+                pan_score = panoptic_seg_score
 
                 pan_results.append(pan_result)
+                pan_scores.append(pan_score)
         else:
             pan_results = None
+            pan_scores = None
 
         rela_results = None
         if self.with_relationship is not None:
             use_fpn_feature_idx = 0
-            entity_res = self.get_entity_embedding(pan_result=pan_results[0], feature_map=x[use_fpn_feature_idx], meta=img_metas[0])
+            entity_res = self.get_entity_embedding(pan_result=pan_results[0], pan_score=pan_scores[0], feature_map=x[use_fpn_feature_idx], meta=img_metas[0])
             if entity_res is not None:
-                realtion_res = []
-                entity_embedding, entityid_list = entity_res
+                relation_res = []
+                entity_embedding, entityid_list, entity_score_list = entity_res
                 relationship_output = self.relationship_head(entity_embedding, attention_mask=None)
                 relationship_output = relationship_output[0]
                 for idx_i in range(relationship_output.shape[1]):
                     relationship_output[:, idx_i, idx_i] = -9999
+                relationship_output = torch.exp(relationship_output)
+
+                # relationship_output x subject score x object score
+                entity_score_tensor = torch.tensor(entity_score_list, device=device, dtype=dtype)
+                relationship_output = relationship_output * entity_score_tensor[None, :, None]
+                relationship_output = relationship_output * entity_score_tensor[None, None, :]                                    
+
+                # find topk
                 _, topk_indices = torch.topk(relationship_output.reshape([-1,]), k=20)
 
+                # subject, object, cls
                 for index in topk_indices:
                     pred_cls = index // (relationship_output.shape[1] ** 2)
                     index_subject_object = index % (relationship_output.shape[1] ** 2)
                     pred_subject = index_subject_object // relationship_output.shape[1]
                     pred_object = index_subject_object % relationship_output.shape[1]
                     pred = [pred_subject.item(), pred_object.item(), pred_cls.item()]
-                    realtion_res.append(pred)
+                    relation_res.append(pred)
+                
                 rela_results = dict(
                     entityid_list=entityid_list,
-                    realtion=realtion_res,
+                    relation=relation_res,
                 )
 
         res = dict(
