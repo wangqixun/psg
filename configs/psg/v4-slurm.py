@@ -144,7 +144,8 @@ model = dict(
             loss_weight=2.5,
         ),
         relationship_head=dict(
-            type='BertTransformer',
+            type='MultiHeadCls',
+            # type='BertTransformer',
             pretrained_transformers='/mnt/mmtech01/usr/guiwan/workspace/model_dl/hfl/chinese-roberta-wwm-ext', 
             cache_dir='/mnt/mmtech01/usr/guiwan/workspace/psg_output/tmp',
             input_feature_size=256,
@@ -419,6 +420,6 @@ workflow = [('train', 1)]
 
 # load_from = '/mnt/mmtech01/usr/guiwan/workspace/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
 load_from = '/mnt/mmtech01/usr/guiwan/workspace/model_dl/refine_cascade-last-mask_cbv2_swimtiny_coco80.pth'
-resume_from = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3/latest.pth'
-# resume_from = None
-work_dir = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3'
+# resume_from = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3/latest.pth'
+resume_from = None
+work_dir = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v4'
