@@ -11,13 +11,19 @@
 <br>
 
 
-## 需要的coco预训练 checkpoint
-### 锋哥下载最后一个就行
+## 需要的3个预训练 checkpoint
+##### coco(锋哥下载最后一个)
 |model |train|val| bbox map | segm map | checkpoint|
 |:--- | :-----: |:-----: |:-----: | ----: | :----:|
 |cbv2_swimtiny_mask_rcnn|coco train|coco minival|50.2|44.5|[链接](https://github.com/CBNetwork/storage/releases/download/v1.0.0/mask_rcnn_cbv2_swin_tiny_patch4_window7_mstrain_480-800_adamw_3x_coco.pth.zip)(from [repo](https://github.com/VDIGPKU/CBNetV2))|
 |refine_cbv2_swimtiny_mask_rcnn|coco train|coco val|50.7|46.5|[链接](https://cloud.189.cn/t/iMbINfRRfER3)(访问码:fj4k)|
 |refine_cbv2_swimtiny_cascade-last-mask_rcnn |coco train|coco val| 52.8 |46.8| [链接](https://cloud.189.cn/t/BJBZjanuERR3)(访问码:qr0n)
+
+[U-2-Net](https://drive.google.com/file/d/1ao1ovG1Qtx4b7EoskHXmi2E9rp5CHLcZ/view?usp=sharing)
+
+[hfl/chinese-roberta-wwm-ext](https://huggingface.co/hfl/chinese-roberta-wwm-ext)
+
+
 
 <br>
 
