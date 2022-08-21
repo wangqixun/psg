@@ -10,6 +10,10 @@
 
 <br>
 
+## 需要的1个验证数据
+[coco80_val](https://cloud.189.cn/t/UNNrMvuEJZv2)（访问码：b5el)
+
+
 
 ## 需要的3个预训练 checkpoint
 ##### coco(锋哥下载最后一个)

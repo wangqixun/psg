@@ -222,7 +222,7 @@ def f1():
     f2(psg_data, tra_id_list, output_tra_json)
     f2(psg_data, val_id_list, output_val_json)
     # psg数据改成coco instance 格式，用来计算psg val上 bbox map 和 segm map
-    f3(psg_data, tra_id_list, output_tra_instance_json, coco_json_file=coco80_instance_train2017_json)
+    # f3(psg_data, tra_id_list, output_tra_instance_json, coco_json_file=coco80_instance_train2017_json)
     f3(psg_data, val_id_list, output_val_instance_json, coco_json_file=coco80_instance_val2017_json)
 
 
