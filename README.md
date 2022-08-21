@@ -37,6 +37,9 @@ pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp
 ## 训练
 
 ```
+# 准备数据
+python wqx/main.py
+# 8卡训练
 bash tools/dist_train.sh configs/psg/v3-slurm.py 8 
 ```
 
