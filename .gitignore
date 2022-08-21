@@ -129,3 +129,6 @@ data/*.png
 output/
 submit/
 wqx/data/
+wqx/*.npy
+wqx/data/
+wqx/__pycache__
