@@ -1488,6 +1488,7 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
                 idx_segm_results = segm_results[idx]
                 idx_bbox_results = bbox_results[idx]
                 id_instance = 1
+                mask_info_list = []
                 for pred_class in range(len(idx_segm_results)):
                     pred_scores_bbox_results = idx_bbox_results[pred_class][:, 4]
                     pred_class_segm_results = idx_segm_results[pred_class]
@@ -1496,9 +1497,30 @@ class CascadeLastMaskRefineRoIHeadForinfer(CascadeLastMaskRefineRoIHead):
                         pred_score = pred_scores_bbox_results[-idx_sample]
                         if pred_score < th:
                             continue
-                        panoptic_seg[pred_mask] = pred_class + id_instance * INSTANCE_OFFSET
-                        panoptic_seg_score[pred_mask] =  panoptic_seg_score[pred_mask] * 0 + pred_score
+                        _mask = pred_mask
+                        _area = np.sum(pred_mask)
+                        _cls = pred_class
+                        _id_mask = pred_class + id_instance * INSTANCE_OFFSET
                         id_instance += 1
+                        mask_info_list.append(
+                            dict(
+                                mask=_mask,
+                                area=_area,
+                                cls=_cls,
+                                id_mask=_id_mask
+                            ),
+                        )
+                        # panoptic_seg[pred_mask] = pred_class + id_instance * INSTANCE_OFFSET
+                        # panoptic_seg_score[pred_mask] =  panoptic_seg_score[pred_mask] * 0 + pred_score
+                        # id_instance += 1
+                mask_info_list = sorted(mask_info_list, key=lambda a: a['area'], reverse=True)
+                for info in mask_info_list:
+                    pred_mask = info['mask']
+                    pred_class = info['cls']
+                    id_instance = info['id_mask']
+                    panoptic_seg[pred_mask] = id_instance
+                    panoptic_seg_score[pred_mask] =  panoptic_seg_score[pred_mask] * 0 + pred_score
+
                 pan_result = panoptic_seg
                 pan_score = panoptic_seg_score
 

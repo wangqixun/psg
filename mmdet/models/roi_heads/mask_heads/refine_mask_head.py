@@ -209,7 +209,9 @@ class RefineMaskHead(nn.Module):
                     stage_instance_loss_weight=[0.25, 0.5, 0.75, 1.0],
                     semantic_loss_weight=1.0,
                     boundary_width=2,
-                    start_stage=1)):
+                    start_stage=1),
+                 loss_weight=1,
+        ):
         super(RefineMaskHead, self).__init__()
 
         self.num_convs_instance = num_convs_instance
@@ -234,6 +236,7 @@ class RefineMaskHead(nn.Module):
         self._build_conv_layer('instance')
         self._build_conv_layer('semantic')
         self.loss_func = build_loss(loss_cfg)
+        self.loss_weight = loss_weight
 
         assert len(self.stage_sup_size) > 1
         self.stages = nn.ModuleList()
@@ -400,7 +403,8 @@ class RefineMaskHead(nn.Module):
 
         loss_instance, loss_semantic = self.loss_func(
             stage_instance_preds, semantic_pred, stage_instance_targets, semantic_target)
-
+        loss_instance = loss_instance * self.loss_weight
+        loss_semantic = loss_semantic * self.loss_weight
         return dict(loss_instance=loss_instance), dict(loss_semantic=loss_semantic)
 
     def get_seg_masks(self, mask_pred, det_bboxes, det_labels, rcnn_test_cfg, ori_shape, scale_factor, rescale):

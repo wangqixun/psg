@@ -186,9 +186,10 @@ def get_val_p(mode, cfg, ckp):
         for instance_id in entityid_list:
             # instance_id == 255 background
             mask = pan_results == instance_id
-            # if instance_id == 255:
-            #     continue
-            r, g, b = random.choices(range(0, 255), k=3)
+            if instance_id == 255:
+                r, g, b = 0, 0, 0
+            else:
+                r, g, b = random.choices(range(0, 255), k=3)
             coloring_mask = np.concatenate([mask[..., None]*1]*3, axis=-1)
             for j, color in enumerate([b, g, r]):
                 coloring_mask[:, :, j] = coloring_mask[:, :, j] * color
@@ -224,9 +225,9 @@ if __name__ == '__main__':
     # get_tra_val_test_list()
     # get_test_p()
     get_val_p(
-        mode='v2',
-        cfg='/share/wangqixun/workspace/bs/psg/psg/configs/psg/v2-slurm.py',
-        ckp='/share/wangqixun/workspace/bs/psg/psg/output/v2/epoch_34.pth',
+        mode='val',
+        cfg='/share/wangqixun/workspace/bs/psg/psg/configs/psg/v3-slurm.py',
+        ckp='/share/wangqixun/workspace/bs/psg/psg/output/v3/epoch_32.pth',
     )
 
 
