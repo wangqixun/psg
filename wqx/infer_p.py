@@ -227,7 +227,7 @@ if __name__ == '__main__':
     get_val_p(
         mode='val',
         cfg='/share/wangqixun/workspace/bs/psg/psg/configs/psg/v3-slurm.py',
-        ckp='/share/wangqixun/workspace/bs/psg/psg/output/v3/epoch_32.pth',
+        ckp='/share/wangqixun/workspace/bs/psg/psg/output/v3/epoch_36.pth',
     )
 
 
