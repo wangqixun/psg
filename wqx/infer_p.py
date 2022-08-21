@@ -56,9 +56,9 @@ def get_tra_val_test_list():
     print('val', len(val_id_list))
     print('test', len(test_id_list))
 
-    np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/tra_id_list.npy', tra_id_list)
-    np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/val_id_list.npy', val_id_list)
-    np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/test_id_list.npy', test_id_list)
+    # np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/tra_id_list.npy', tra_id_list)
+    # np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/val_id_list.npy', val_id_list)
+    # np.save('/share/wangqixun/workspace/bs/psg/psg/wqx/test_id_list.npy', test_id_list)
     
     return tra_id_list, val_id_list, test_id_list
 

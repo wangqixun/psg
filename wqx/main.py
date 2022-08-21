@@ -1,9 +1,20 @@
-from xsma.generel_utils.tool_json import load_json, write_json
+# from xsma.generel_utils.tool_json import load_json, write_json
 import numpy as np
 from infer_p import get_tra_val_test_list
 from tqdm import tqdm
+import json
+
+def write_json(x_struct: dict, json_file: str):
+    with open(json_file, 'w') as fd:
+        json.dump(x_struct, fd, indent=4, ensure_ascii=False)
+
+def load_json(json_file):
+    with open(json_file) as f:
+        data = json.load(f)
+    return data
 
 
+# psg json for train and val
 def f2(psg_data, id_list, output_json):
 
     out_json = {}
@@ -147,7 +158,7 @@ def f2(psg_data, id_list, output_json):
     write_json(out_json, output_json)
 
     
-
+# psg json for val instane map
 def f3(psg_data, id_list, output_instance_json, coco_json_file):
     # coco_json_file = '/share/data/coco/annotations/instances_train2017_coco80.json'
     coco_json = load_json(coco_json_file)
@@ -198,25 +209,21 @@ def f1():
     output_tra_instance_json = '/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_tra.json'
     output_val_instance_json = '/share/wangqixun/workspace/bs/psg/psg/data/psg_instance_val.json'
     psg_data_file = '/share/data/psg/dataset/for_participants/psg_train_val.json'
-    # psg_data_file = '/share/data/psg/dataset/for_participants/psg_val_test.json'
+
+    coco80_instance_train2017_json = '/share/data/coco/annotations/instances_train2017_coco80.json'
+    coco80_instance_val2017_json = '/share/data/coco/annotations/instances_val2017_coco80.json'
 
     tra_id_list, val_id_list, test_id_list = get_tra_val_test_list()
 
     psg_data = load_json(psg_data_file)
-    # test_image_ids = psg_data['test_image_ids']
 
-    # id_all = [data_info['image_id'] for data_info in psg_data['data']]
-    # id_all = np.unique(id_all)
-    # np.random.shuffle(id_all)
-    # id_tra = id_all[:int(len(id_all)*0.9)]
-    # id_val = id_all[int(len(id_all)*0.9):]
-    # id_tra = np.load(tra_list_npy)
-    # id_val = np.load(val_list_npy)
-    
+    # psg数据改成coco pan格式，额外增加"relations_categories" 和 "relations"
+    # 其中 "relations" 在 "annotations" 的元素中
     f2(psg_data, tra_id_list, output_tra_json)
     f2(psg_data, val_id_list, output_val_json)
-    f3(psg_data, tra_id_list, output_tra_instance_json, coco_json_file = '/share/data/coco/annotations/instances_train2017_coco80.json')
-    f3(psg_data, val_id_list, output_val_instance_json, coco_json_file = '/share/data/coco/annotations/instances_val2017_coco80.json')
+    # psg数据改成coco instance 格式，用来计算psg val上 bbox map 和 segm map
+    f3(psg_data, tra_id_list, output_tra_instance_json, coco_json_file=coco80_instance_train2017_json)
+    f3(psg_data, val_id_list, output_val_instance_json, coco_json_file=coco80_instance_val2017_json)
 
 
 
