@@ -13,13 +13,16 @@
 pip install -e .
 ```
 
-此外，还需要 [apex](https://github.com/NVIDIA/apex) 。建议通过下面代码安装
+[apex](https://github.com/NVIDIA/apex) 建议通过下面代码安装
 ```
 git clone https://github.com/NVIDIA/apex
 cd apex
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 ```
-
+panopticapi
+```
+pip install git+https://github.com/cocodataset/panopticapi.git
+```
 
 <br>
 
@@ -74,7 +77,7 @@ python wqx/main.py
 <br>
 
 ## 训练
-+ 1、调整 `configs/psg/xxxx.py` 中预训练路径、输出路径、tra val 数据路径
++ 调整 `configs/psg/v3-slurm.py` 中预训练路径、输出路径、tra val 数据路径
 ```python
 # 模型中预训练部分
 model['roi_head']['semantic_head']['pretrain'] = "/path/u2net.pth"
@@ -90,9 +93,9 @@ test_data['img_prefix'] = '/path/psg/dataset/'
 test_data['seg_prefix'] = '/path/psg/dataset/'
 test_data['ins_ann_file'] = 'data/psg_instance_val.json'
 # 输出路径
-work_dir = '/share/output/v3'
+work_dir = 'output/v3'
 ```
-+ 2、训练咯
++ 训练咯
 ```
 # 8卡训练
 bash tools/dist_train.sh configs/psg/v3-slurm.py 8 
@@ -101,12 +104,20 @@ bash tools/dist_train.sh configs/psg/v3-slurm.py 8
 <br>
 
 ## Submit
-+ 1、调整 `wqx/infer_p.py` 中 `cfg` 和 `ckp`
-+ 2、推理
++ 调整 `wqx/infer_p.py` 中 `cfg` 和 `ckp`
+```python
+if __name__ == '__main__':
+    get_val_p(
+        mode='v3',
+        cfg='configs/psg/v3-slurm.py',
+        ckp='output/v3/epoch_34.pth',
+    )
+```
++ 推理
 ```
 python wqx/infer_p.py
 ```
-+ 3、打包
++ 打包
 ```
 cd submit/v3
 zip -r submission.zip submission/
