@@ -74,7 +74,24 @@ python wqx/main.py
 <br>
 
 ## 训练
-+ 1、调整 `configs/psg/xxxx.py` 中预训练路径、输出路径
++ 1、调整 `configs/psg/xxxx.py` 中预训练路径、输出路径、tra val 数据路径
+```python
+# 模型中预训练部分
+model['roi_head']['semantic_head']['pretrain'] = "/path/u2net.pth"
+model['roi_head']['relationship_head']['pretrained_transformers'] = "/path/chinese-roberta-wwm-ext"
+load_from = "/path/refine_cascade-last-mask_cbv2_swimtiny_coco-205cd24d.pth"
+# tra 数据部分
+train_data['ann_file'] = 'data/psg_tra.json'
+train_data['img_prefix'] = '/path/psg/dataset/'
+train_data['seg_prefix'] = '/path/psg/dataset/'
+# val 数据部分
+test_data['ann_file'] = 'data/psg_val.json'
+test_data['img_prefix'] = '/path/psg/dataset/'
+test_data['seg_prefix'] = '/path/psg/dataset/'
+test_data['ins_ann_file'] = 'data/psg_instance_val.json'
+# 输出路径
+work_dir = '/share/output/v3'
+```
 + 2、训练咯
 ```
 # 8卡训练

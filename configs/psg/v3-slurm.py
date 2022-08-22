@@ -360,7 +360,7 @@ train_data = dict(
     ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_tra.json',
     img_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
     seg_prefix='/mnt/mmtech01/dataset/v_cocomask/psg/',
-    ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_tra.json',
+    # ins_ann_file='/mnt/mmtech01/dataset/v_cocomask/psg/ann/psg_instance_tra.json',
     pipeline=train_pipeline,
 )
 test_data = dict(
@@ -419,6 +419,6 @@ workflow = [('train', 1)]
 
 # load_from = '/mnt/mmtech01/usr/guiwan/workspace/model_dl/mask_rcnn_convnext_tiny_1k_3x.pth'
 load_from = '/mnt/mmtech01/usr/guiwan/workspace/model_dl/refine_cascade-last-mask_cbv2_swimtiny_coco80.pth'
-resume_from = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3/latest.pth'
-# resume_from = None
+# resume_from = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3/latest.pth'
+resume_from = None
 work_dir = '/mnt/mmtech01/usr/guiwan/workspace/psg_output/v3'
